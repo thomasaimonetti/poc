@@ -24,7 +24,7 @@ func main() {
 	// Create USERS_UPDATE stream
 	updateStreamConfig := &nats.StreamConfig{
 		Name:     "USERS_UPDATE",
-		Subjects: []string{"users.update"},
+		Subjects: []string{"users.push.*"},
 		Storage:  nats.FileStorage,
 	}
 
@@ -38,7 +38,7 @@ func main() {
 	// Create USERS_BROADCAST stream
 	broadcastStreamConfig := &nats.StreamConfig{
 		Name:     "USERS_BROADCAST",
-		Subjects: []string{"users.broadcast"},
+		Subjects: []string{"users.pull.*"},
 		Storage:  nats.FileStorage,
 	}
 

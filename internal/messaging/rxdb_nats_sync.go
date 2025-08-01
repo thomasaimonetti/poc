@@ -9,10 +9,12 @@ import (
 
 	"cognyx/psychic-robot/persistence/db"
 	"cognyx/psychic-robot/persistence/repository"
+
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill-nats/v2/pkg/nats"
 	"github.com/ThreeDotsLabs/watermill/message"
 	natsgo "github.com/nats-io/nats.go"
+	"github.com/rs/zerolog/log"
 )
 
 // RxDBDocument represents a document structure used by RxDB NATS replication
@@ -48,6 +50,8 @@ func NewRxDBNATSSync(
 		return nil, fmt.Errorf("failed to connect to NATS: %w", err)
 	}
 
+	log.Printf("Connected to NATS")
+
 	// Create JetStream context
 	js, err := nc.JetStream()
 	if err != nil {
@@ -61,15 +65,14 @@ func NewRxDBNATSSync(
 		// Create the stream if it doesn't exist
 		_, err = js.AddStream(&natsgo.StreamConfig{
 			Name:     streamName,
-			Subjects: []string{"users.>"},
+			Subjects: []string{"users.push.>"},
 			Storage:  natsgo.FileStorage,
 		})
 		if err != nil {
+			fmt.Println("failed to create JetStream stream: %w", err)
 			return nil, fmt.Errorf("failed to create JetStream stream: %w", err)
 		}
-		logger.Info("Created JetStream stream for RxDB replication", watermill.LogFields{
-			"stream": streamName,
-		})
+		fmt.Println("Created JetStream stream for RxDB replication: %s", streamName)
 	}
 
 	// Create Watermill publisher and subscriber
@@ -184,7 +187,7 @@ func (s *RxDBNATSSync) findUserByEmail(ctx context.Context, email string) (*db.U
 // handleUserCreation creates a new user in PostgreSQL from RxDB data
 func (s *RxDBNATSSync) handleUserCreation(ctx context.Context, rxdbDoc RxDBDocument) error {
 	s.logger.Info("Creating user from RxDB sync", watermill.LogFields{
-		"email": rxdbDoc.Email,
+		"email":   rxdbDoc.Email,
 		"rxdb_id": rxdbDoc.ID,
 	})
 
@@ -228,7 +231,7 @@ func (s *RxDBNATSSync) handleUserCreation(ctx context.Context, rxdbDoc RxDBDocum
 
 	s.logger.Info("User created successfully from RxDB sync", watermill.LogFields{
 		"user_id": user.ID,
-		"email": user.Email,
+		"email":   user.Email,
 		"rxdb_id": rxdbDoc.ID,
 	})
 
@@ -241,7 +244,7 @@ func (s *RxDBNATSSync) handleUserCreation(ctx context.Context, rxdbDoc RxDBDocum
 func (s *RxDBNATSSync) handleUserUpdate(ctx context.Context, userID int64, rxdbDoc RxDBDocument) error {
 	s.logger.Info("Updating user from RxDB sync", watermill.LogFields{
 		"user_id": userID,
-		"email": rxdbDoc.Email,
+		"email":   rxdbDoc.Email,
 	})
 
 	// Get existing user (though we don't use it in this implementation)
@@ -297,7 +300,7 @@ func (s *RxDBNATSSync) handleUserUpdate(ctx context.Context, userID int64, rxdbD
 
 	s.logger.Info("User updated successfully from RxDB sync", watermill.LogFields{
 		"user_id": userID,
-		"email": updatedUser.Email,
+		"email":   updatedUser.Email,
 		"version": nextVersion,
 	})
 
@@ -316,7 +319,7 @@ func (s *RxDBNATSSync) handleUserDeletion(ctx context.Context, userID int64, rxd
 
 	s.logger.Info("Deleting user from RxDB sync", watermill.LogFields{
 		"user_id": userID,
-		"email": rxdbDoc.Email,
+		"email":   rxdbDoc.Email,
 	})
 
 	// For this implementation, we'll just log the deletion
@@ -332,12 +335,12 @@ func (s *RxDBNATSSync) handleUserDeletion(ctx context.Context, userID int64, rxd
 
 	// Create deletion version record
 	deletionData := map[string]interface{}{
-		"id": userID,
-		"email": rxdbDoc.Email,
-		"_deleted": true,
+		"id":         userID,
+		"email":      rxdbDoc.Email,
+		"_deleted":   true,
 		"deleted_at": time.Now().Format(time.RFC3339),
 	}
-	
+
 	userDataJSON, err := json.Marshal(deletionData)
 	if err != nil {
 		return fmt.Errorf("failed to marshal deletion data: %w", err)
@@ -397,7 +400,7 @@ func (s *RxDBNATSSync) publishUserToRxDB(ctx context.Context, user db.User, acti
 
 	s.logger.Info("Published user data to RxDB", watermill.LogFields{
 		"subject": subject,
-		"action": action,
+		"action":  action,
 		"user_id": user.ID,
 	})
 
@@ -407,18 +410,18 @@ func (s *RxDBNATSSync) publishUserToRxDB(ctx context.Context, user db.User, acti
 // Stop shuts down the RxDB NATS synchronization
 func (s *RxDBNATSSync) Stop() error {
 	s.logger.Info("Stopping RxDB NATS synchronization", watermill.LogFields{})
-	
+
 	if s.subscriber != nil {
 		if err := s.subscriber.Close(); err != nil {
 			s.logger.Error("Failed to close subscriber", err, watermill.LogFields{})
 		}
 	}
-	
+
 	if s.publisher != nil {
 		if err := s.publisher.Close(); err != nil {
 			s.logger.Error("Failed to close publisher", err, watermill.LogFields{})
 		}
 	}
-	
+
 	return nil
 }

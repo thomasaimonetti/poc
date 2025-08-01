@@ -2,11 +2,11 @@
 
 echo "🔍 NATS Message Monitor with Auto-Decoding"
 echo "=========================================="
-echo "Monitoring users.pull with automatic payload decoding..."
+echo "Monitoring users.update with automatic payload decoding..."
 echo "Press Ctrl+C to stop"
 echo ""
 
-./internal/nats subscribe users.pull.* | while IFS= read -r line; do
+./internal/nats subscribe users.push.* | while IFS= read -r line; do
     echo "$line"
     
     # Check if line contains a Payload field

@@ -2,12 +2,13 @@
 import type { RxCollection, RxDatabase } from "rxdb";
 import { createRxDatabase } from "rxdb";
 import { addRxPlugin } from 'rxdb/plugins/core';
+// import { RxDBDevModePlugin } from "rxdb/plugins/dev-mode";
 import { RxDBQueryBuilderPlugin } from "rxdb/plugins/query-builder";
-import { replicateNats, RxNatsReplicationState } from "rxdb/plugins/replication-nats";
 import { getRxStorageDexie } from "rxdb/plugins/storage-dexie";
 import { RxDBUpdatePlugin } from 'rxdb/plugins/update';
 import { wrappedValidateAjvStorage } from "rxdb/plugins/validate-ajv";
 import { onMounted, reactive, ref } from "vue";
+import { replicateNats, RxNatsReplicationState } from "./replication-nats";
 
 
 const userSchema = {
@@ -106,7 +107,10 @@ async function startReplication() {
     replicationState.value = replicateNats({
       collection: usersCollection.value?.users,
       replicationIdentifier: "users-replication",
-      streamName: "USERS_BROADCAST",
+      streams: {
+        pull: "USERS_BROADCAST",
+        push: "USERS_UPDATE"
+      },
       subjectPrefix: "users",
       connection: { servers: "ws://127.0.0.1:9222" },
       live: true,
@@ -115,6 +119,7 @@ async function startReplication() {
     });
 
     // Set up event listeners
+
     replicationState.value.error$.subscribe((error) => {
       console.error("Replication error:", error);
       errorCount.value++;
