@@ -1,0 +1,30 @@
+{
+  "name": "types",
+  "version": "1.0.0",
+  "description": "Shared TypeScript types and Zod schemas for frontend and server",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "rxdb": "^16.16.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.17",
+    "typescript": "^5.8.3"
+  },
+  "files": [
+    "dist"
+  ]
+}

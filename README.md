@@ -62,13 +62,30 @@ This project implements a real-time user management system using NATS messaging 
 - **Versions Table**: Complete audit trail of changes
 - **Port**: 5432
 
+### 5. js types
+for convenients, there's a shared js types package used by both the server & the front end
+
+### 6. js server
+the js server uses a sqlite database, and exposes endpoints & websockets for the custom replication
+
 ## Prerequisites
 
 1. **Docker** (for NATS and PostgreSQL)
 2. **Go 1.21+** (for backend)
-3. **Node.js 18+** (for frontend server)
+3. **Node.js 22+** (for frontend server)
 
 ## Quick Start
+
+### 0. Replicate with JS Server
+
+```bash
+pnpm install
+# starts everything
+pnpm -r --parallel dev
+```
+
+go to http://localhost:3000 and play !
+replication is now started directly after rxDB initialization
 
 ### 1. Start Infrastructure Services
 

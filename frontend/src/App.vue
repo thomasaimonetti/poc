@@ -1,13 +1,17 @@
 <script setup lang="ts">
-import type { RxCollection, RxDatabase } from "rxdb";
+import type { RxDatabase } from "rxdb";
 import { createRxDatabase } from "rxdb";
 import { addRxPlugin } from 'rxdb/plugins/core';
+// import { RxDBDevModePlugin } from "rxdb/plugins/dev-mode";
 import { RxDBQueryBuilderPlugin } from "rxdb/plugins/query-builder";
-import { replicateNats, RxNatsReplicationState } from "rxdb/plugins/replication-nats";
+import type { RxReplicationState } from "rxdb/plugins/replication";
 import { getRxStorageDexie } from "rxdb/plugins/storage-dexie";
 import { RxDBUpdatePlugin } from 'rxdb/plugins/update';
 import { wrappedValidateAjvStorage } from "rxdb/plugins/validate-ajv";
+import type { CheckpointType } from "types";
 import { onMounted, reactive, ref } from "vue";
+import type { User, UsersCollectionType } from "./user";
+import { useWebsocketReplication } from "./useWebsocketReplication";
 
 
 const userSchema = {
@@ -26,25 +30,18 @@ const userSchema = {
       required: ["id", "email", "status"],
     };
 
-interface User {
-    id: string
-    email: string
-    status: string
-    role?: string
-    created_at: string
-    updated_at: string
-    _deleted: boolean
-}
+    
 
 // Global variables
-const database = ref<RxDatabase | null>(null);
-const usersCollection = ref<{users: RxCollection<User, {}, unknown, unknown>} | null>(null);
-const replicationState = ref<RxNatsReplicationState<User> | null>(null);
+const database = ref<RxDatabase<{users: UsersCollectionType}> | null>(null);
+const usersCollection = ref<{users: UsersCollectionType} | null>(null);
+const replicationState = ref<RxReplicationState<User, CheckpointType> | null>(null);
 const syncedCount = ref(0);
 const errorCount = ref(0);
 const replicationStarted = ref(false);
 const replicationStatus = ref("Initializing RxDB...");
 const replicationStatusType = ref("info");
+const token = ref("valid_token");
 
 const logs = ref<{ id: number; message: string }[]>([]);
 
@@ -67,14 +64,14 @@ async function initRxDB() {
     const storage = wrappedValidateAjvStorage({ storage: getRxStorageDexie() })
 
     database.value = await createRxDatabase({
-      name: "usersdb_nats",
+      name: "usersdb_",
       storage,
       multiInstance: true,
     });
 
     
-
-    usersCollection.value = await database.value?.addCollections({
+    // @ts-ignore
+    usersCollection.value = await database.value?.addCollections<{users: UsersCollectionType}>({
       users: { schema: userSchema },
     });
 
@@ -86,6 +83,8 @@ async function initRxDB() {
 
     updateReplicationStatus("✅ RxDB initialized successfully", "success");
     logMessage("✅ RxDB database and collection created");
+
+    startReplication()
   } catch (error) {
     console.error("RxDB initialization failed:", error);
     logMessage("❌ RxDB initialization failed: " + (error as Error).message);
@@ -97,24 +96,23 @@ async function initRxDB() {
   }
 }
 
-// Start NATS replication
+// Start Websocket replication
 async function startReplication() {
   try {
-    updateReplicationStatus("Starting NATS replication...", "info");
-    logMessage("🔄 Starting RxDB NATS replication...");
+    updateReplicationStatus("Starting Websocket replication...", "info");
+    logMessage("🔄 Starting RxDB Websocket replication...");
 
-    replicationState.value = replicateNats({
-      collection: usersCollection.value?.users,
-      replicationIdentifier: "users-replication",
-      streamName: "USERS_BROADCAST",
-      subjectPrefix: "users",
-      connection: { servers: "ws://127.0.0.1:9222" },
-      live: true,
-      pull: { batchSize: 30 },
-      push: { batchSize: 30 },
-    });
+    const collection = usersCollection.value?.users as UsersCollectionType
+
+    if (!collection) {
+      throw new Error("Users collection not found");
+    }
+
+    // replicationState.value = useReplication(collection)
+    replicationState.value = useWebsocketReplication<UsersCollectionType>(collection, token.value)
 
     // Set up event listeners
+
     replicationState.value.error$.subscribe((error) => {
       console.error("Replication error:", error);
       errorCount.value++;
@@ -129,27 +127,27 @@ async function startReplication() {
 
     replicationState.value.sent$.subscribe((sent) => {
       syncedCount.value++;
-      logMessage("📤 Document sent to NATS: " + sent.id);
+      logMessage("📤 Document sent to : " + sent.id);
 
     });
 
     replicationState.value.received$.subscribe((received) => {
       syncedCount.value++;
-      logMessage("📥 Document received from NATS: " + received.id);
+      logMessage("📥 Document received from : " + received.id);
 
     });
 
     // Wait for initial replication
     await replicationState.value?.awaitInitialReplication();
 
-    updateReplicationStatus("✅ NATS replication is active!", "success");
-    logMessage("✅ NATS replication started successfully");
+    updateReplicationStatus("✅ Websocket replication is active!", "success");
+    logMessage("✅ Websocket replication started successfully");
 
     replicationStarted.value = true;
     
   } catch (error) {
     console.error("Failed to start replication:", error);
-    logMessage("❌ Failed to start NATS replication: " + (error as Error).message);
+    logMessage("❌ Failed to start  replication: " + (error as Error).message);
     updateReplicationStatus(
       "Failed to start replication: " + (error as Error).message,
       "error"
@@ -159,7 +157,7 @@ async function startReplication() {
   }
 }
 
-// Stop NATS replication
+// Stop Websocket replication
 async function stopReplication() {
   try {
     if (replicationState.value) {
@@ -168,7 +166,7 @@ async function stopReplication() {
     }
 
     updateReplicationStatus("Replication stopped", "info");
-    logMessage("⏹️ NATS replication stopped");
+    logMessage("⏹️ Websocket replication stopped");
 
     replicationStarted.value = false;
     
@@ -343,18 +341,18 @@ function generateUUID() {
 
 onMounted(() => {
   window.addEventListener("load", async () => {
-    logMessage("🎬 Initializing RxDB NATS Replication Frontend...");
+    logMessage("🎬 Initializing RxDB Replication Frontend...");
     await initRxDB();
-    logMessage('✅ Ready! Click "Start NATS Replication" to begin syncing.');
+    logMessage('✅ Ready! Click "Start Replication" to begin syncing.');
   });
 });
 </script>
 
 <template>
-  <h1>🚀 RxDB NATS Replication Frontend</h1>
+  <h1>🚀 RxDB Replication Frontend</h1>
 
   <div class="container">
-    <h3>🔄 RxDB NATS Replication Status</h3>
+    <h3>🔄 RxDB Replication Status</h3>
     <div id="replicationStatus" :class="['status', replicationStatusType]">{{  replicationStatus }}</div>
     <div class="stats">
       <div class="stat-item">
@@ -371,7 +369,7 @@ onMounted(() => {
       </div>
     </div>
     <button id="startReplication" @click="startReplication" :disabled="replicationStarted">
-      🔄 Start NATS Replication
+      🔄 Start Replication
     </button>
     <button id="stopReplication" @click="stopReplication" :disabled="!replicationStarted">
       ⏹️ Stop Replication
@@ -398,7 +396,7 @@ onMounted(() => {
   </div>
 
   <div class="container">
-    <h3>💾 Local Users (RxDB + NATS)</h3>
+    <h3>💾 Local Users (RxDB + Websocket)</h3>
     <div id="localUsers" class="user-list">
       <div v-if="usersStore.length === 0" class="user-item">No users yet...</div>
       <div v-else v-for="user in usersStore" :key="user.id" class="user-item">
